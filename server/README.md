@@ -107,6 +107,141 @@ Authorization: Bearer <JWT>
 Use the exported `server/middleware/authMiddleware.js` on protected routes.
 It sets `req.user.id` from the verified token subject.
 
+## Glucose readings
+
+Every readings endpoint requires `Authorization: Bearer <JWT>`. The authenticated
+user ID is taken only from the verified token; a `user_id` in a request body is
+never used.
+
+Permitted time slots are `morning`, `after_breakfast`, `after_lunch`, and
+`after_dinner`. Reading values must be integers from 40 through 600, and the
+reading date must be a valid `YYYY-MM-DD` date that is not in the future. A user
+may have at most four readings per date and only one reading per time slot.
+
+### Create a reading
+
+`POST /api/readings`
+
+```json
+{
+  "reading_date": "2026-11-13",
+  "time_slot": "morning",
+  "value": 110
+}
+```
+
+Successful response (`201`):
+
+```json
+{
+  "success": true,
+  "message": "Reading created successfully.",
+  "data": {
+    "id": "1",
+    "user_id": "17",
+    "reading_date": "2026-11-13",
+    "time_slot": "morning",
+    "value": 110,
+    "created_at": "2026-11-13T08:00:00.000Z",
+    "updated_at": "2026-11-13T08:00:00.000Z"
+  }
+}
+```
+
+### Get readings
+
+`GET /api/readings`
+
+Optional query filters: `reading_date=2026-11-13` and/or `month=2026-11`.
+Results are restricted to the authenticated user and sorted newest date and
+creation time first.
+
+Successful response (`200`):
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "1",
+      "user_id": "17",
+      "reading_date": "2026-11-13",
+      "time_slot": "morning",
+      "value": 110,
+      "created_at": "2026-11-13T08:00:00.000Z",
+      "updated_at": "2026-11-13T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Get a reading
+
+`GET /api/readings/:id`
+
+Successful response (`200`) uses the same `data` object shape as the create
+response. A missing reading or one belonging to another user returns `404`.
+
+### Update a reading
+
+`PUT /api/readings/:id`
+
+Supply all three reading fields; the same date, slot, value, duplicate, and
+daily-limit validations as creation apply.
+
+```json
+{
+  "reading_date": "2026-11-13",
+  "time_slot": "after_breakfast",
+  "value": 125
+}
+```
+
+Successful response (`200`) contains the updated reading in `data`.
+
+### Delete a reading
+
+`DELETE /api/readings/:id`
+
+Successful response (`200`):
+
+```json
+{
+  "success": true,
+  "message": "Reading deleted successfully."
+}
+```
+
+Invalid input returns `400`, missing or invalid authentication returns `401`,
+missing or non-owned readings return `404`, and duplicate slots or the daily
+limit return `409`. Unexpected failures return a generic `500` response without
+database details.
+
+Example error responses:
+
+```json
+{
+  "success": false,
+  "message": "Glucose value must be an integer between 40 and 600."
+}
+```
+
+```json
+{
+  "success": false,
+  "message": "A maximum of four readings is allowed per day."
+}
+```
+
+Database failures return a generic message, for example:
+
+```json
+{
+  "success": false,
+  "message": "Unable to complete the reading request."
+}
+```
+
 ### Tests
 
 From the `server` directory, run:

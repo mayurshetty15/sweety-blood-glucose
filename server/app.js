@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const authRouter = require('./routes/auth');
 const healthRouter = require('./routes/health');
+const readingsRouter = require('./routes/readings');
 
 const app = express();
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -18,6 +19,7 @@ app.get('/', (req, res) => {
 
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/readings', readingsRouter);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -27,6 +29,13 @@ app.use((req, res) => {
 });
 
 app.use((error, req, res, next) => {
+  if (error && error.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      success: false,
+      message: 'A valid JSON request body is required.',
+    });
+  }
+
   console.error('Unhandled request error.');
   res.status(500).json({
     success: false,
