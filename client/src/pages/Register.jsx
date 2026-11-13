@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 import PasswordField from '../components/PasswordField.jsx'
 import useAuth from '../context/useAuth.js'
 import AuthLayout from '../layouts/AuthLayout.jsx'
+import { getAuthenticatedHome } from '../routes/routePolicy.js'
 import { getApiErrorMessage } from '../services/api.js'
 
 function Register() {
@@ -42,13 +43,13 @@ function Register() {
 
     setIsSubmitting(true)
     try {
-      await register({
+      const user = await register({
         name: normalizedName,
         email: normalizedEmail,
         password,
       })
       toast.success('Your Sweety account is ready.')
-      navigate('/dashboard', { replace: true })
+      navigate(getAuthenticatedHome(user), { replace: true })
     } catch (requestError) {
       const message = getApiErrorMessage(requestError)
       setError(message)

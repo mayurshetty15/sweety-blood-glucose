@@ -98,7 +98,7 @@ test('registers a normalized user, stores a bcrypt hash, and returns a safe user
   let insertedHash;
   queryHandler = async (sql, values) => {
     assert.match(sql, /INSERT INTO users/);
-    assert.match(sql, /VALUES\s*\(\$1,\s*\$2,\s*\$3\)/);
+    assert.match(sql, /VALUES\s*\(\$1,\s*\$2,\s*\$3,\s*'patient'\)/);
     assert.deepEqual(values.slice(0, 2), ['Mayur', 'mayur@example.com']);
     insertedHash = values[2];
 
@@ -107,6 +107,7 @@ test('registers a normalized user, stores a bcrypt hash, and returns a safe user
         id: '17',
         name: 'Mayur',
         email: 'mayur@example.com',
+        role: 'patient',
         created_at: '2026-11-12T12:00:00.000Z',
       }],
     };
@@ -116,11 +117,14 @@ test('registers a normalized user, stores a bcrypt hash, and returns a safe user
     name: ' Mayur ',
     email: ' Mayur@Example.COM ',
     password: 'StrongPassword123',
+    role: 'doctor',
   });
 
   assert.equal(response.status, 201);
   assert.equal(response.body.user.id, '17');
   assert.equal(response.body.user.email, 'mayur@example.com');
+  assert.equal(response.body.user.role, 'patient');
+  assert.equal(response.body.user.profile_complete, false);
   assert.equal(Object.hasOwn(response.body.user, 'password'), false);
   assert.equal(Object.hasOwn(response.body.user, 'password_hash'), false);
   assert.ok(await bcrypt.compare('StrongPassword123', insertedHash));
@@ -128,6 +132,7 @@ test('registers a normalized user, stores a bcrypt hash, and returns a safe user
   assert.equal(JSON.stringify(response.body).includes(insertedHash), false);
   const claims = jwt.verify(response.body.token, process.env.JWT_SECRET);
   assert.equal(claims.sub, '17');
+  assert.equal(claims.role, 'patient');
   assert.equal(Object.hasOwn(claims, 'password'), false);
   assert.equal(Object.hasOwn(claims, 'password_hash'), false);
 });
@@ -164,17 +169,22 @@ test('validates required registration fields, email, and minimum password length
     email: 'mayur@example.com',
     password: 'short',
   });
+  const missingLoginRole = await postJson('/api/auth/login', {
+    email: 'mayur@example.com',
+    password: 'StrongPassword123',
+  });
 
   assert.equal(missingFields.status, 400);
   assert.equal(invalidEmail.status, 400);
   assert.equal(shortPassword.status, 400);
+  assert.equal(missingLoginRole.status, 400);
   assert.match(shortPassword.body.message, /at least 8 characters/);
 });
 
-test('logs in with a normalized email and returns a safe user and token', async () => {
+test('logs in with a normalized email and selected role and returns a safe user and token', async () => {
   const passwordHash = await bcrypt.hash('StrongPassword123', 12);
   queryHandler = async (sql, values) => {
-    assert.match(sql, /WHERE email = \$1/);
+    assert.match(sql, /WHERE u\.email = \$1/);
     assert.deepEqual(values, ['mayur@example.com']);
     return {
       rows: [{
@@ -182,6 +192,8 @@ test('logs in with a normalized email and returns a safe user and token', async 
         name: 'Mayur',
         email: 'mayur@example.com',
         password: passwordHash,
+        role: 'patient',
+        profile_complete: false,
         created_at: '2026-11-12T12:00:00.000Z',
       }],
     };
@@ -190,13 +202,18 @@ test('logs in with a normalized email and returns a safe user and token', async 
   const response = await postJson('/api/auth/login', {
     email: ' Mayur@Example.COM ',
     password: 'StrongPassword123',
+    role: 'patient',
   });
 
   assert.equal(response.status, 200);
   assert.equal(response.body.user.email, 'mayur@example.com');
   assert.equal(Object.hasOwn(response.body.user, 'password'), false);
   assert.equal(JSON.stringify(response.body).includes(passwordHash), false);
-  assert.equal(jwt.verify(response.body.token, process.env.JWT_SECRET).sub, '17');
+  const claims = jwt.verify(response.body.token, process.env.JWT_SECRET);
+  assert.equal(claims.sub, '17');
+  assert.equal(claims.role, 'patient');
+  assert.equal(response.body.user.role, 'patient');
+  assert.equal(response.body.user.profile_complete, false);
 });
 
 test('returns the same invalid-credentials response for unknown email and wrong password', async () => {
@@ -209,6 +226,7 @@ test('returns the same invalid-credentials response for unknown email and wrong 
         name: 'Mayur',
         email: 'mayur@example.com',
         password: passwordHash,
+        role: 'patient',
         created_at: '2026-11-12T12:00:00.000Z',
       }],
   });
@@ -216,15 +234,65 @@ test('returns the same invalid-credentials response for unknown email and wrong 
   const unknownEmail = await postJson('/api/auth/login', {
     email: 'unknown@example.com',
     password: 'WrongPassword123',
+    role: 'patient',
   });
   const wrongPassword = await postJson('/api/auth/login', {
     email: 'mayur@example.com',
     password: 'WrongPassword123',
+    role: 'patient',
   });
 
   assert.equal(unknownEmail.status, 401);
   assert.equal(wrongPassword.status, 401);
   assert.equal(unknownEmail.body.message, wrongPassword.body.message);
+});
+
+test('rejects login when the selected role does not match the stored account role', async () => {
+  const passwordHash = await bcrypt.hash('StrongPassword123', 12);
+  queryHandler = async () => ({
+    rows: [{
+      id: '17',
+      name: 'Mayur',
+      email: 'mayur@example.com',
+      password: passwordHash,
+      role: 'patient',
+      created_at: '2026-11-12T12:00:00.000Z',
+    }],
+  });
+
+  const response = await postJson('/api/auth/login', {
+    email: 'mayur@example.com',
+    password: 'StrongPassword123',
+    role: 'doctor',
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(response.body.message, 'Invalid email or password.');
+});
+
+test('logs in a doctor only when doctor mode matches the stored role', async () => {
+  const passwordHash = await bcrypt.hash('DoctorPassword123', 12);
+  queryHandler = async () => ({
+    rows: [{
+      id: '28',
+      name: 'Demo Doctor',
+      email: 'doctor@example.test',
+      password: passwordHash,
+      role: 'doctor',
+      profile_complete: false,
+      created_at: '2026-11-12T12:00:00.000Z',
+    }],
+  });
+
+  const response = await postJson('/api/auth/login', {
+    email: 'doctor@example.test',
+    password: 'DoctorPassword123',
+    role: 'doctor',
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.user.role, 'doctor');
+  assert.equal(jwt.verify(response.body.token, process.env.JWT_SECRET).role, 'doctor');
 });
 
 test('rejects a missing authentication token with HTTP 401', () => {
@@ -250,7 +318,7 @@ test('rejects a malformed authentication token with HTTP 401', () => {
 
 test('rejects a token with an invalid signature', () => {
   const token = jwt.sign(
-    { sub: '17' },
+    { sub: '17', role: 'patient' },
     'different-isolated-test-secret',
     { algorithm: 'HS256', expiresIn: '1m' },
   );
@@ -262,7 +330,7 @@ test('rejects a token with an invalid signature', () => {
 
 test('rejects an expired authentication token with HTTP 401', () => {
   const token = jwt.sign(
-    { sub: '17' },
+    { sub: '17', role: 'patient' },
     process.env.JWT_SECRET,
     { algorithm: 'HS256', expiresIn: -1 },
   );
@@ -274,12 +342,64 @@ test('rejects an expired authentication token with HTTP 401', () => {
 
 test('attaches only the verified token user ID to the request', () => {
   const token = jwt.sign(
-    { sub: '17' },
+    { sub: '17', role: 'patient' },
     process.env.JWT_SECRET,
     { algorithm: 'HS256', expiresIn: '1m' },
   );
   const result = runAuthMiddleware(`Bearer ${token}`);
 
   assert.equal(result.nextCalled, true);
-  assert.deepEqual(result.req.user, { id: '17' });
+  assert.deepEqual(result.req.user, { id: '17', role: 'patient' });
+});
+
+test('rejects a token without a verified role claim', () => {
+  const token = jwt.sign(
+    { sub: '17' },
+    process.env.JWT_SECRET,
+    { algorithm: 'HS256', expiresIn: '1m' },
+  );
+  const result = runAuthMiddleware(`Bearer ${token}`);
+
+  assert.equal(result.res.statusCode, 401);
+  assert.equal(result.nextCalled, false);
+});
+
+test('rejects a token when its role claim is altered', () => {
+  const token = jwt.sign(
+    { sub: '17', role: 'patient' },
+    process.env.JWT_SECRET,
+    { algorithm: 'HS256', expiresIn: '1m' },
+  );
+  const [header, encodedPayload, signature] = token.split('.');
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+  payload.role = 'doctor';
+  const alteredPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const result = runAuthMiddleware(`Bearer ${header}.${alteredPayload}.${signature}`);
+
+  assert.equal(result.res.statusCode, 401);
+  assert.equal(result.nextCalled, false);
+});
+
+test('role middleware rejects a patient from a doctor-only route', () => {
+  const middleware = authMiddleware.requireRole('doctor');
+  const req = { user: { id: '17', role: 'patient' } };
+  const res = {
+    statusCode: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+  let nextCalled = false;
+
+  middleware(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(nextCalled, false);
 });

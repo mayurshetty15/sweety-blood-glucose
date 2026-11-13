@@ -37,13 +37,29 @@ function authMiddleware(req, res, next) {
     !payload ||
     typeof payload !== 'object' ||
     typeof payload.sub !== 'string' ||
-    !/^[1-9]\d*$/.test(payload.sub)
+    !/^[1-9]\d*$/.test(payload.sub) ||
+    !['patient', 'doctor'].includes(payload.role)
   ) {
     return unauthorized(res);
   }
 
-  req.user = { id: payload.sub };
+  req.user = { id: payload.sub, role: payload.role };
   return next();
 }
+
+function requireRole(role) {
+  return function roleMiddleware(req, res, next) {
+    if (req.user?.role !== role) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to access this resource.',
+      });
+    }
+
+    return next();
+  };
+}
+
+authMiddleware.requireRole = requireRole;
 
 module.exports = authMiddleware;

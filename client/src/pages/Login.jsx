@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 import PasswordField from '../components/PasswordField.jsx'
 import useAuth from '../context/useAuth.js'
 import AuthLayout from '../layouts/AuthLayout.jsx'
+import { getAuthenticatedHome } from '../routes/routePolicy.js'
 import { getApiErrorMessage } from '../services/api.js'
 
 function Login() {
@@ -12,6 +13,7 @@ function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState('patient')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -30,9 +32,9 @@ function Login() {
 
     setIsSubmitting(true)
     try {
-      await login({ email: email.trim(), password })
+      const user = await login({ email: email.trim(), password, role })
       toast.success('Welcome back to Sweety.')
-      navigate('/dashboard', { replace: true })
+      navigate(getAuthenticatedHome(user), { replace: true })
     } catch (requestError) {
       const message = getApiErrorMessage(requestError)
       setError(message)
@@ -47,10 +49,23 @@ function Login() {
       <div className="auth-heading">
         <span className="auth-kicker">Welcome back</span>
         <h2>Sign in to Sweety</h2>
-        <p>Continue to your personal glucose tracker.</p>
+        <p>Choose your account type to continue securely.</p>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
+        <div className="form-field">
+          <label className="form-label" htmlFor="login-role">Sign in as</label>
+          <select
+            className="text-control select-control"
+            id="login-role"
+            name="role"
+            value={role}
+            onChange={(event) => setRole(event.target.value)}
+          >
+            <option value="patient">Patient</option>
+            <option value="doctor">Doctor</option>
+          </select>
+        </div>
         <div className="form-field">
           <label className="form-label" htmlFor="login-email">Email address</label>
           <input

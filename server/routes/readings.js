@@ -10,7 +10,7 @@ const {
 
 const router = express.Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, authMiddleware.requireRole('patient'));
 
 router.post('/', createReading);
 router.get('/', getReadings);

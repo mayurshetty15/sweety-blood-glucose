@@ -73,9 +73,9 @@ function SlotAverageTooltip({ active, payload }) {
   )
 }
 
-function EmptyChart({ isLoading, error, emptyMessage }) {
+function EmptyChart({ isLoading, error, emptyMessage, readingOwner = 'your' }) {
   if (isLoading) {
-    return <div className="chart-empty" role="status">Loading your readings…</div>
+    return <div className="chart-empty" role="status">Loading {readingOwner} readings…</div>
   }
   if (error) {
     return (
@@ -92,7 +92,12 @@ function EmptyChart({ isLoading, error, emptyMessage }) {
   )
 }
 
-function AnalyticsCharts({ readings, isLoading = false, error = '' }) {
+function AnalyticsCharts({
+  readings,
+  isLoading = false,
+  error = '',
+  readingOwner = 'your',
+}) {
   const distribution = getTimeSlotDistribution(readings)
   const trends = getDailyTrends(readings)
   const slotAverages = getTimeSlotAverages(readings)
@@ -155,6 +160,7 @@ function AnalyticsCharts({ readings, isLoading = false, error = '' }) {
           <EmptyChart
             isLoading={isLoading}
             error={error}
+            readingOwner={readingOwner}
             emptyMessage="Distribution will appear when readings are available."
           />
         )}
@@ -208,6 +214,7 @@ function AnalyticsCharts({ readings, isLoading = false, error = '' }) {
           <EmptyChart
             isLoading={isLoading}
             error={error}
+            readingOwner={readingOwner}
             emptyMessage="Daily averages will appear when readings are available."
           />
         )}
@@ -260,6 +267,7 @@ function AnalyticsCharts({ readings, isLoading = false, error = '' }) {
           <EmptyChart
             isLoading={isLoading}
             error={error}
+            readingOwner={readingOwner}
             emptyMessage="Time-slot averages will appear when readings are available."
           />
         )}

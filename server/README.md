@@ -40,6 +40,24 @@ text and are not converted through UTC timestamps.
 `server/.env` is ignored by Git. Never commit real connection strings or JWT
 secrets.
 
+### Roles and migration
+
+Run `database/migrations/001_patient_roles_and_profiles.sql`,
+`database/migrations/002_doctor_profiles.sql`, and
+`database/migrations/003_doctor_patient_access.sql` manually against the target
+database before deploying these phases. They add `users.role` with a `patient`
+default, explicitly assign `patient` to existing `NULL` roles, add role and
+profile validation constraints, and create patient profiles, doctor profiles,
+and the unique doctor-patient consent table. Existing user rows and glucose
+readings are preserved; existing users receive the `patient` role where their
+role is `NULL`. No glucose readings are changed or deleted. The application
+does not run migrations at startup. Existing tokens issued before the role
+claim was introduced must sign in again after deployment.
+
+Public registration always creates a patient account. Doctor accounts are not
+created through the registration API; they require a controlled administrative
+process.
+
 ### Register
 
 `POST /api/auth/register`
@@ -63,6 +81,8 @@ Successful response (`201`):
     "id": "1",
     "name": "Mayur",
     "email": "mayur@example.com",
+    "role": "patient",
+    "profile_complete": false,
     "created_at": "2026-11-12T12:00:00.000Z"
   }
 }
@@ -78,7 +98,8 @@ Registration returns `409` if the normalized email already exists.
 ```json
 {
   "email": "mayur@example.com",
-  "password": "StrongPassword123"
+  "password": "StrongPassword123",
+  "role": "patient"
 }
 ```
 
@@ -93,6 +114,8 @@ Successful response (`200`):
     "id": "1",
     "name": "Mayur",
     "email": "mayur@example.com",
+    "role": "patient",
+    "profile_complete": false,
     "created_at": "2026-11-12T12:00:00.000Z"
   }
 }
@@ -100,6 +123,8 @@ Successful response (`200`):
 
 Invalid email/password combinations return the same `401` message. Neither
 endpoint returns the stored password hash.
+Login verifies the selected role against the stored role and places that
+verified role in the signed JWT. Selecting the wrong role is rejected.
 
 ### Authenticated requests
 
@@ -110,7 +135,62 @@ Authorization: Bearer <JWT>
 ```
 
 Use the exported `server/middleware/authMiddleware.js` on protected routes.
-It sets `req.user.id` from the verified token subject.
+It sets `req.user.id` and `req.user.role` from the verified token claims. Use
+`authMiddleware.requireRole('patient')` or
+`authMiddleware.requireRole('doctor')` after authentication for role-specific
+routes.
+
+### Patient profile
+
+`GET /api/patient/profile` returns the authenticated patient's profile or
+`data: null` when it has not been completed. `PUT /api/patient/profile` creates
+or updates only the profile owned by the authenticated patient. The request
+requires `full_name`, an integer `age` from 1 through 120, one of `female`,
+`male`, `non_binary`, `other`, or `prefer_not_to_say`, and a valid phone number
+containing 7 to 15 digits (optional `+` and common separators are accepted).
+The API stores the phone in compact international form. Profile responses
+never include authentication fields.
+
+### Fictional doctor seed
+
+The explicit `npm run seed:doctors` command creates five clearly fictional
+doctor accounts and profiles. First set `ENABLE_DEMO_DOCTOR_SEED=true` and a
+unique `DEMO_DOCTOR_PASSWORD` (12 to 72 UTF-8 bytes) in the private
+`server/.env`. The same configured password is hashed with bcrypt separately
+for each newly created account; reruns do not reset existing doctor passwords.
+The seed runs in one transaction, is idempotent, and refuses to change an
+existing non-doctor account into a doctor. Do not enable this seed in production.
+The fictional login emails are listed in `server/scripts/seedDemoDoctors.js`.
+
+### Directory and patient consent
+
+These endpoints require a patient-role JWT:
+
+- `GET /api/doctors` returns active directory cards without account emails.
+- `GET /api/patient/doctors/access` returns only the authenticated patient's
+  consent records.
+- `POST /api/patient/doctors/:doctorId/approve` approves access only if the
+  target is an active doctor with a directory profile and the patient sends
+  `{"confirmed": true}` after the consent dialog.
+- `DELETE /api/patient/doctors/:doctorId/access` changes that patient's
+  relationship to `revoked`; it does not delete the consent history.
+
+The patient ID is always taken from the verified JWT, never from request data.
+The directory asks for explicit patient confirmation before sending the
+approval request. Doctors receive report access only through backend checks of
+an `approved` relationship.
+
+Doctor-role endpoints:
+
+- `GET /api/doctor/patients` lists only the authenticated doctor's approved
+  patients and supports a `search` query.
+- `GET /api/doctor/patients/:patientId/report?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`
+  returns the selected patient's profile and real readings only after checking
+  and locking the approved consent relationship for the duration of the read.
+  Revoked and unapproved relationships return `404`.
+
+The doctor report is read-only. Doctor-role JWTs are rejected by all glucose
+create, update, and delete endpoints.
 
 ## Glucose readings
 

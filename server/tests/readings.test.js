@@ -34,21 +34,21 @@ after(async () => {
   await pool.end();
 });
 
-function tokenFor(id = userId) {
-  return jwt.sign({ sub: id }, process.env.JWT_SECRET, {
+function tokenFor(id = userId, role = 'patient') {
+  return jwt.sign({ sub: id, role }, process.env.JWT_SECRET, {
     algorithm: 'HS256',
     expiresIn: '15m',
   });
 }
 
-function request(method, path, body, includeToken = true) {
+function request(method, path, body, includeToken = true, role = 'patient') {
   return new Promise((resolve, reject) => {
     const headers = {};
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
     }
     if (includeToken) {
-      headers.Authorization = `Bearer ${tokenFor()}`;
+      headers.Authorization = `Bearer ${tokenFor(userId, role)}`;
     }
 
     const outgoing = http.request(
@@ -439,4 +439,15 @@ test('rejects a reading request without a JWT before database access', async () 
 
   assert.equal(response.status, 401);
   assert.equal(databaseCalled, false);
+});
+
+test('doctor role cannot read, create, update, or delete glucose readings', async () => {
+  const responses = await Promise.all([
+    request('GET', '/api/readings', undefined, true, 'doctor'),
+    request('POST', '/api/readings', validReading, true, 'doctor'),
+    request('PUT', '/api/readings/1', validReading, true, 'doctor'),
+    request('DELETE', '/api/readings/1', undefined, true, 'doctor'),
+  ]);
+
+  assert.ok(responses.every((response) => response.status === 403));
 });

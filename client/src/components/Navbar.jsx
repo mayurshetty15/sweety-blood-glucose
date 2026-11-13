@@ -4,11 +4,12 @@ import { NavLink } from 'react-router-dom'
 import BrandLogo from './BrandLogo.jsx'
 import ThemeSwitcher from './ThemeSwitcher.jsx'
 import useAuth from '../context/useAuth.js'
-import { AUTHENTICATED_ROUTES } from '../routes/appRoutes.js'
+import { AUTHENTICATED_ROUTES, DOCTOR_ROUTES } from '../routes/appRoutes.js'
 
 function Navbar() {
   const { user, logout } = useAuth()
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+  const routes = user?.role === 'doctor' ? DOCTOR_ROUTES : AUTHENTICATED_ROUTES
   const displayName = user?.name || user?.email || 'Account'
   const profileInitial = displayName.charAt(0).toUpperCase()
 
@@ -24,7 +25,7 @@ function Navbar() {
         id="dashboard-navigation"
         aria-label="Main navigation"
       >
-        {AUTHENTICATED_ROUTES.map(({ path, label }) => (
+        {routes.map(({ path, label }) => (
           <NavLink
             key={path}
             to={path}

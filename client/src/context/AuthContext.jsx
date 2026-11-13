@@ -43,7 +43,13 @@ function readStoredSession() {
 
   try {
     const user = JSON.parse(storedUser)
-    if (!user || typeof user !== 'object' || user.id == null || typeof user.email !== 'string') {
+    if (
+      !user ||
+      typeof user !== 'object' ||
+      user.id == null ||
+      typeof user.email !== 'string' ||
+      !['patient', 'doctor'].includes(user.role)
+    ) {
       clearStoredSession()
       return { token: null, user: null }
     }
@@ -71,7 +77,7 @@ export function AuthProvider({ children }) {
 
   function storeSession(response) {
     const { token, user } = response
-    if (!token || !user) {
+    if (!token || !user || !['patient', 'doctor'].includes(user.role)) {
       throw new Error('The server returned an incomplete authentication response.')
     }
 
@@ -94,12 +100,23 @@ export function AuthProvider({ children }) {
     setSession({ token: null, user: null })
   }
 
+  function updateUser(updates) {
+    if (!session.user) {
+      return
+    }
+
+    const user = { ...session.user, ...updates }
+    window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
+    setSession({ ...session, user })
+  }
+
   const value = {
     user: session.user,
     token: session.token,
     isAuthenticated: Boolean(session.token && session.user),
     login,
     register,
+    updateUser,
     logout,
   }
 

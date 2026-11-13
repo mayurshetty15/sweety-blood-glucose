@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const authRouter = require('./routes/auth');
+const doctorRouter = require('./routes/doctor');
+const doctorsRouter = require('./routes/doctors');
 const healthRouter = require('./routes/health');
+const patientRouter = require('./routes/patient');
 const readingsRouter = require('./routes/readings');
 
 const app = express();
@@ -19,6 +22,9 @@ app.get('/', (req, res) => {
 
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/doctor', doctorRouter);
+app.use('/api/doctors', doctorsRouter);
+app.use('/api/patient', patientRouter);
 app.use('/api/readings', readingsRouter);
 
 app.use((req, res) => {

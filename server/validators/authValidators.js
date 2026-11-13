@@ -62,9 +62,12 @@ function validateLogin(body) {
     return { error: 'A JSON object is required.' };
   }
 
-  const { email, password } = body;
+  const { email, password, role } = body;
   if (typeof email !== 'string' || typeof password !== 'string' || !password) {
     return { error: 'Email and password are required.' };
+  }
+  if (!['patient', 'doctor'].includes(role)) {
+    return { error: 'Choose a valid account role.' };
   }
 
   const emailResult = validateEmail(email);
@@ -80,6 +83,7 @@ function validateLogin(body) {
     value: {
       email: emailResult.value,
       password,
+      role,
     },
   };
 }

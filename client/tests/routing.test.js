@@ -4,6 +4,7 @@ import { matchRoutes } from 'react-router-dom'
 import {
   APP_PATHS,
   AUTHENTICATED_ROUTES,
+  DOCTOR_REPORT_ROUTE,
 } from '../src/routes/appRoutes.js'
 import { getProtectedRedirect } from '../src/routes/routePolicy.js'
 
@@ -17,13 +18,38 @@ test('all authenticated navigation targets resolve to their own route', () => {
 
   assert.deepEqual(
     AUTHENTICATED_ROUTES.map(({ path }) => path),
-    [APP_PATHS.dashboard, APP_PATHS.analytics, APP_PATHS.reports],
+    [
+      APP_PATHS.dashboard,
+      APP_PATHS.analytics,
+      APP_PATHS.reports,
+      APP_PATHS.profile,
+      APP_PATHS.doctors,
+    ],
   )
 })
 
 test('protected and guest-only routes redirect according to authentication state', () => {
-  assert.equal(getProtectedRedirect(false), '/login')
-  assert.equal(getProtectedRedirect(true), null)
-  assert.equal(getProtectedRedirect(true, true), APP_PATHS.dashboard)
-  assert.equal(getProtectedRedirect(false, true), null)
+  const patient = { role: 'patient', profile_complete: true }
+  assert.equal(getProtectedRedirect({ isAuthenticated: false }), '/login')
+  assert.equal(
+    getProtectedRedirect({ isAuthenticated: true, user: patient }),
+    null,
+  )
+  assert.equal(
+    getProtectedRedirect({ isAuthenticated: true, user: patient, guestOnly: true }),
+    APP_PATHS.dashboard,
+  )
+  assert.equal(
+    getProtectedRedirect({ isAuthenticated: false, guestOnly: true }),
+    null,
+  )
+  assert.equal(DOCTOR_REPORT_ROUTE, '/doctor/patients/:patientId/report')
+  assert.equal(
+    getProtectedRedirect({
+      isAuthenticated: true,
+      user: { role: 'doctor' },
+      role: 'doctor',
+    }),
+    null,
+  )
 })

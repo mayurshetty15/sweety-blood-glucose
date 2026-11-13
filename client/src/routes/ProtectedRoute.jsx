@@ -1,10 +1,18 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import useAuth from '../context/useAuth.js'
 import { getProtectedRedirect } from './routePolicy.js'
 
-function ProtectedRoute({ guestOnly = false }) {
-  const { isAuthenticated } = useAuth()
-  const redirect = getProtectedRedirect(isAuthenticated, guestOnly)
+function ProtectedRoute({ guestOnly = false, role, skipProfileCompletion = false }) {
+  const { isAuthenticated, user } = useAuth()
+  const location = useLocation()
+  const redirect = getProtectedRedirect({
+    isAuthenticated,
+    user,
+    guestOnly,
+    role,
+    skipProfileCompletion,
+    pathname: location.pathname,
+  })
 
   if (redirect) {
     return <Navigate to={redirect} replace />

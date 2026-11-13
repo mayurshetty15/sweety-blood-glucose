@@ -35,9 +35,9 @@ function respondWithAuthConfigurationError(res) {
   });
 }
 
-function createToken(userId, jwtConfiguration) {
+function createToken(userId, role, jwtConfiguration) {
   return jwt.sign(
-    { sub: String(userId) },
+    { sub: String(userId), role },
     jwtConfiguration.secret,
     {
       algorithm: 'HS256',
@@ -51,6 +51,8 @@ function toSafeUser(row) {
     id: row.id,
     name: row.name,
     email: row.email,
+    role: row.role,
+    profile_complete: Boolean(row.profile_complete),
     created_at: row.created_at,
   };
 }
@@ -83,9 +85,9 @@ async function register(req, res) {
   let result;
   try {
     result = await pool.query(
-      `INSERT INTO users (name, email, password)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, email, created_at`,
+      `INSERT INTO users (name, email, password, role)
+       VALUES ($1, $2, $3, 'patient')
+       RETURNING id, name, email, role, created_at`,
       [validation.value.name, validation.value.email, passwordHash],
     );
   } catch (error) {
@@ -108,7 +110,7 @@ async function register(req, res) {
 
   try {
     const user = toSafeUser(result.rows[0]);
-    const token = createToken(user.id, jwtConfiguration);
+    const token = createToken(user.id, 'patient', jwtConfiguration);
 
     return res.status(201).json({
       success: true,
@@ -142,9 +144,17 @@ async function login(req, res) {
   let result;
   try {
     result = await pool.query(
-      `SELECT id, name, email, password, created_at
-       FROM users
-       WHERE email = $1
+      `SELECT u.id, u.name, u.email, u.password, u.role, u.created_at,
+              (
+                p.id IS NOT NULL
+                AND p.full_name IS NOT NULL
+                AND p.age IS NOT NULL
+                AND p.gender IS NOT NULL
+                AND p.phone IS NOT NULL
+              ) AS profile_complete
+       FROM users u
+       LEFT JOIN patient_profiles p ON p.user_id = u.id
+       WHERE u.email = $1
        LIMIT 1`,
       [validation.value.email],
     );
@@ -182,9 +192,16 @@ async function login(req, res) {
     });
   }
 
+  if (row.role !== validation.value.role) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password.',
+    });
+  }
+
   try {
     const user = toSafeUser(row);
-    const token = createToken(user.id, jwtConfiguration);
+    const token = createToken(user.id, user.role, jwtConfiguration);
 
     return res.status(200).json({
       success: true,
