@@ -31,6 +31,11 @@ Configure these values in `server/.env`:
 | `JWT_EXPIRES_IN` | Token lifetime accepted by `jsonwebtoken`, for example `1h` |
 | `PORT` | Backend port (defaults to `5000`) |
 | `CLIENT_URL` | Allowed frontend origin |
+| `APP_TIME_ZONE` | Calendar time zone used for future-date validation (defaults to `Asia/Kolkata`) |
+
+Set `APP_TIME_ZONE` to the same calendar zone as the frontend's
+`VITE_APP_TIME_ZONE`. PostgreSQL `DATE` responses are returned as `YYYY-MM-DD`
+text and are not converted through UTC timestamps.
 
 `server/.env` is ignored by Git. Never commit real connection strings or JWT
 secrets.
@@ -152,9 +157,13 @@ Successful response (`201`):
 
 `GET /api/readings`
 
-Optional query filters: `reading_date=2026-11-13` and/or `month=2026-11`.
-Results are restricted to the authenticated user and sorted newest date and
-creation time first.
+Optional query filters include `reading_date=2026-11-13`, `month=2026-11`,
+or a paired `start_date=2026-11-01&end_date=2026-11-13`. Date-range filters
+cannot be combined with `reading_date` or `month`. Future dates and reversed
+ranges are rejected. Omitting date filters returns the user's complete history.
+Results are restricted to the authenticated user and sorted newest date first,
+then by time slot from after dinner to morning. The API returns `reading_date` as
+`YYYY-MM-DD` text so PostgreSQL `DATE` values cannot shift across time zones.
 
 Successful response (`200`):
 
@@ -252,3 +261,20 @@ npm test
 
 The authentication tests stub database queries and do not require production
 database credentials.
+
+### Seed synthetic glucose readings
+
+Set `SEED_USER_EMAIL` in `server/.env` to the email of your existing account.
+The seeder verifies that account exists and never creates a user. It generates
+synthetic readings for the previous calendar month and current month-to-date,
+then inserts them in a transaction using the existing unique daily-slot
+constraint to skip duplicates. Existing readings are never deleted or updated.
+
+Run manually from the `server` directory:
+
+```bash
+npm run seed:demo
+```
+
+The command reports the number of inserted readings and skipped duplicates. It
+is not run automatically when the server starts.

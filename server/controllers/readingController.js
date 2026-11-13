@@ -83,7 +83,8 @@ async function createReading(req, res) {
     const result = await client.query(
       `INSERT INTO readings (user_id, reading_date, time_slot, value)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, user_id, reading_date, time_slot, value, created_at, updated_at`,
+       RETURNING id, user_id, reading_date::text AS reading_date,
+                 time_slot, value, created_at, updated_at`,
       [userId, readingDate, timeSlot, value],
     );
     await client.query('COMMIT');
@@ -129,13 +130,29 @@ async function getReadings(req, res) {
     conditions.push(`reading_date >= $${values.length}::date`);
     conditions.push(`reading_date < ($${values.length}::date + INTERVAL '1 month')`);
   }
+  if (validation.value.start_date !== undefined) {
+    values.push(validation.value.start_date);
+    conditions.push(`reading_date >= $${values.length}::date`);
+    values.push(validation.value.end_date);
+    conditions.push(`reading_date <= $${values.length}::date`);
+  }
 
   try {
     const result = await pool.query(
-      `SELECT id, user_id, reading_date, time_slot, value, created_at, updated_at
+      `SELECT id, user_id, reading_date::text AS reading_date,
+              time_slot, value, created_at, updated_at
        FROM readings
        WHERE ${conditions.join(' AND ')}
-       ORDER BY reading_date DESC, created_at DESC`,
+       ORDER BY reading_date DESC,
+                CASE time_slot
+                  WHEN 'after_dinner' THEN 4
+                  WHEN 'after_lunch' THEN 3
+                  WHEN 'after_breakfast' THEN 2
+                  WHEN 'morning' THEN 1
+                  ELSE 0
+                END DESC,
+                created_at DESC,
+                id DESC`,
       values,
     );
 
@@ -156,7 +173,8 @@ async function getReadingById(req, res) {
 
   try {
     const result = await pool.query(
-      `SELECT id, user_id, reading_date, time_slot, value, created_at, updated_at
+      `SELECT id, user_id, reading_date::text AS reading_date,
+              time_slot, value, created_at, updated_at
        FROM readings
        WHERE id = $1 AND user_id = $2`,
       [validation.value, req.user.id],
@@ -244,7 +262,8 @@ async function updateReading(req, res) {
       `UPDATE readings
        SET reading_date = $1, time_slot = $2, value = $3, updated_at = CURRENT_TIMESTAMP
        WHERE id = $4 AND user_id = $5
-       RETURNING id, user_id, reading_date, time_slot, value, created_at, updated_at`,
+       RETURNING id, user_id, reading_date::text AS reading_date,
+                 time_slot, value, created_at, updated_at`,
       [readingDate, timeSlot, value, readingId, userId],
     );
     await client.query('COMMIT');

@@ -2,11 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <meta
+      name="description"
+      content="Sweety is a personal blood glucose tracking companion."
+    />
+    <script>
+      (() => {
+        let preference = 'light'
+        try {
+          const storedPreference = window.localStorage.getItem('sweety-theme')
+          if (['light', 'dark'].includes(storedPreference)) {
+            preference = storedPreference
+          }
+        } catch (error) {
+          console.error('Unable to read the saved theme preference.', error)
+        }
+
+        document.documentElement.dataset.theme = preference
+        document.documentElement.dataset.themePreference = preference
+      })()
+    </script>
+    <title>Sweety – Blood Glucose Tracker</title>
   </head>
   <body>
-    <p>Mayur UI</p>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

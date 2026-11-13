@@ -139,7 +139,9 @@ test('creates a reading under the JWT user and locks the user before the daily c
 
   assert.equal(response.status, 201);
   assert.equal(response.body.data.user_id, userId);
-  assert.deepEqual(calls.find((call) => /INSERT INTO readings/.test(call.sql)).values, [
+  const insertCall = calls.find((call) => /INSERT INTO readings/.test(call.sql));
+  assert.match(insertCall.sql, /reading_date::text AS reading_date/);
+  assert.deepEqual(insertCall.values, [
     userId,
     validReading.reading_date,
     validReading.time_slot,
@@ -258,8 +260,61 @@ test('lists only the JWT user readings and supports date/month filters', async (
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.data.map((reading) => reading.user_id), [userId]);
   assert.match(query.sql, /WHERE user_id = \$1/);
-  assert.match(query.sql, /ORDER BY reading_date DESC, created_at DESC/);
+  assert.match(query.sql, /ORDER BY reading_date DESC/);
+  assert.match(query.sql, /CASE time_slot/);
+  assert.match(query.sql, /created_at DESC,\s+id DESC/);
   assert.deepEqual(query.values, [userId, '2026-01-02', '2026-01-01']);
+});
+
+test('returns the complete authenticated user history without date restrictions', async () => {
+  let query;
+  const slots = ['morning', 'after_breakfast', 'after_lunch', 'after_dinner'];
+  const rows = Array.from({ length: 25 }, (_, index) => {
+    const readingDate = new Date(Date.UTC(2026, 10, 13 - Math.floor(index / 2)))
+      .toISOString()
+      .slice(0, 10);
+    return readingRow({
+      id: String(index + 1),
+      reading_date: readingDate,
+      time_slot: slots[index % slots.length],
+    });
+  });
+  pool.query = async (sql, values) => {
+    query = { sql, values };
+    return { rows };
+  };
+
+  const response = await request('GET', '/api/readings');
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.length, 25);
+  assert.ok(response.body.data.every((reading) => reading.user_id === userId));
+  assert.match(query.sql, /WHERE user_id = \$1/);
+  assert.doesNotMatch(query.sql, /reading_date\s*=\s*\$\d+/);
+  assert.match(query.sql, /ORDER BY reading_date DESC/);
+  assert.match(query.sql, /CASE time_slot/);
+  assert.deepEqual(query.values, [userId]);
+});
+
+test('lists a user-owned date range and returns PostgreSQL dates as calendar strings', async () => {
+  let query;
+  pool.query = async (sql, values) => {
+    query = { sql, values };
+    return { rows: [readingRow({ reading_date: '2026-11-13' })] };
+  };
+
+  const response = await request(
+    'GET',
+    '/api/readings?start_date=2026-11-07&end_date=2026-11-13',
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data[0].reading_date, '2026-11-13');
+  assert.match(query.sql, /WHERE user_id = \$1/);
+  assert.match(query.sql, /reading_date::text AS reading_date/);
+  assert.match(query.sql, /reading_date >= \$2::date/);
+  assert.match(query.sql, /reading_date <= \$3::date/);
+  assert.deepEqual(query.values, [userId, '2026-11-07', '2026-11-13']);
 });
 
 test('does not disclose another user reading when looking up an ID', async () => {
@@ -290,6 +345,33 @@ test('rejects malformed date filters', async () => {
   assert.match(response.body.message, /month must be in YYYY-MM format/);
 });
 
+test('rejects incomplete or reversed date ranges', async () => {
+  for (const [path, message] of [
+    ['/api/readings?start_date=2026-11-01', /must be provided together/],
+    [
+      '/api/readings?start_date=2026-11-13&end_date=2026-11-07',
+      /cannot be after end_date/,
+    ],
+  ]) {
+    const response = await request('GET', path);
+    assert.equal(response.status, 400);
+    assert.match(response.body.message, message);
+  }
+});
+
+test('rejects future dates in reading list filters', async () => {
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const future = tomorrow.toISOString().slice(0, 10);
+  const response = await request(
+    'GET',
+    `/api/readings?start_date=${future}&end_date=${future}`,
+  );
+
+  assert.equal(response.status, 400);
+  assert.match(response.body.message, /cannot include future dates/);
+});
+
 test('updates a reading with a user-scoped query and a locked daily-limit check', async () => {
   const calls = mockClient((sql) => {
     if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
@@ -318,7 +400,9 @@ test('updates a reading with a user-scoped query and a locked daily-limit check'
 
   assert.equal(response.status, 200);
   assert.equal(response.body.data.time_slot, 'after_breakfast');
+  assert.equal(response.body.data.value, 125);
   const updateCall = calls.find((call) => /UPDATE readings/.test(call.sql));
+  assert.match(updateCall.sql, /reading_date::text AS reading_date/);
   assert.match(updateCall.sql, /WHERE id = \$4 AND user_id = \$5/);
   assert.deepEqual(updateCall.values, [
     validReading.reading_date,
