@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { usePatientFiltersOptional } from '../context/PatientFilterContext.jsx'
 import { getApiErrorMessage } from '../services/api.js'
 import { getReadings } from '../services/readingService.js'
 import { filterReadings, getDateRange, isValidDateRange } from '../utils/analyticsUtils.js'
@@ -11,6 +12,7 @@ function useReadingFilters({
   enabled = true,
 } = {}) {
   const today = getLocalDateValue()
+  const patientFilters = usePatientFiltersOptional()
   const [rangePreset, setRangePreset] = useState(initialPreset)
   const [dateRange, setDateRange] = useState(
     () => initialRange || getDateRange(initialPreset, today),
@@ -26,8 +28,16 @@ function useReadingFilters({
   const [allReadings, setAllReadings] = useState([])
   const [loadState, setLoadState] = useState({ requestKey: '', error: '' })
   const [refreshKey, setRefreshKey] = useState(0)
+
+  const effectiveRangePreset = patientFilters?.rangePreset ?? rangePreset
+  const effectiveDateRange = patientFilters?.dateRange ?? dateRange
+  const effectiveCustomStart = patientFilters?.customStart ?? customStart
+  const effectiveCustomEnd = patientFilters?.customEnd ?? customEnd
+  const effectiveTimeSlot = patientFilters?.timeSlot ?? timeSlot
+  const effectiveDateFilterError = patientFilters?.dateFilterError ?? dateFilterError
+
   const requestKey = enabled
-    ? `${dateRange.start}|${dateRange.end}|${refreshKey}`
+    ? `${effectiveDateRange.start}|${effectiveDateRange.end}|${refreshKey}`
     : 'disabled'
   const isLoading = enabled && loadState.requestKey !== requestKey
   const error = enabled && loadState.requestKey === requestKey ? loadState.error : ''
@@ -41,8 +51,8 @@ function useReadingFilters({
     const controller = new AbortController()
 
     getReadings({
-      start_date: dateRange.start,
-      end_date: dateRange.end,
+      start_date: effectiveDateRange.start,
+      end_date: effectiveDateRange.end,
     }, { signal: controller.signal })
       .then((response) => {
         if (!Array.isArray(response.data)) {
@@ -68,13 +78,17 @@ function useReadingFilters({
       active = false
       controller.abort()
     }
-  }, [dateRange.end, dateRange.start, enabled, refreshKey, requestKey])
+  }, [effectiveDateRange.end, effectiveDateRange.start, enabled, refreshKey, requestKey])
 
   const refresh = useCallback(() => {
     setRefreshKey((current) => current + 1)
   }, [])
 
   function applyRange(nextRange, preset = 'custom') {
+    if (patientFilters) {
+      return patientFilters.applyRange(nextRange, preset)
+    }
+
     if (!isValidDateRange(nextRange, today)) {
       setDateFilterError('Choose a valid date range that ends today or earlier.')
       return false
@@ -89,6 +103,11 @@ function useReadingFilters({
   }
 
   function changePreset(nextPreset) {
+    if (patientFilters) {
+      patientFilters.changePreset(nextPreset)
+      return
+    }
+
     setDateFilterError('')
     setRangePreset(nextPreset)
     if (nextPreset === 'custom') {
@@ -101,30 +120,62 @@ function useReadingFilters({
 
   function applyCustomRange(event) {
     event.preventDefault()
+    if (patientFilters) {
+      return patientFilters.applyCustomRange(event)
+    }
     return applyRange({ start: customStart, end: customEnd }, 'custom')
   }
 
   function resetFilters() {
+    if (patientFilters) {
+      patientFilters.resetFilters()
+      return
+    }
+
     const todayRange = getDateRange('today', today)
     setTimeSlot('all')
     applyRange(todayRange, 'today')
   }
 
+  function handleSetTimeSlot(nextTimeSlot) {
+    if (patientFilters) {
+      patientFilters.setTimeSlot(nextTimeSlot)
+      return
+    }
+    setTimeSlot(nextTimeSlot)
+  }
+
+  function handleSetCustomStart(nextDate) {
+    if (patientFilters) {
+      patientFilters.setCustomStart(nextDate)
+      return
+    }
+    setCustomStart(nextDate)
+  }
+
+  function handleSetCustomEnd(nextDate) {
+    if (patientFilters) {
+      patientFilters.setCustomEnd(nextDate)
+      return
+    }
+    setCustomEnd(nextDate)
+  }
+
   return {
     allReadings,
-    readings: filterReadings(allReadings, dateRange, timeSlot),
-    dateRange,
-    rangePreset,
-    customStart,
-    customEnd,
-    timeSlot,
+    readings: filterReadings(allReadings, effectiveDateRange, effectiveTimeSlot),
+    dateRange: effectiveDateRange,
+    rangePreset: effectiveRangePreset,
+    customStart: effectiveCustomStart,
+    customEnd: effectiveCustomEnd,
+    timeSlot: effectiveTimeSlot,
     today,
-    dateFilterError,
+    dateFilterError: effectiveDateFilterError,
     isLoading,
     error,
-    setCustomStart,
-    setCustomEnd,
-    setTimeSlot,
+    setCustomStart: handleSetCustomStart,
+    setCustomEnd: handleSetCustomEnd,
+    setTimeSlot: handleSetTimeSlot,
     changePreset,
     applyRange,
     applyCustomRange,

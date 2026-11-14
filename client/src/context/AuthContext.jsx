@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 import AuthContext from './authContext.js'
+import { clearPatientFiltersForUser } from './PatientFilterContext.jsx'
 import {
   clearStoredSession,
   TOKEN_STORAGE_KEY,
@@ -96,6 +97,9 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    if (session.user?.id) {
+      clearPatientFiltersForUser(session.user.id)
+    }
     clearStoredSession()
     setSession({ token: null, user: null })
   }

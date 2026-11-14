@@ -4,6 +4,7 @@ import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 import AppLayout from './layouts/AppLayout.jsx'
+import { PatientFilterProvider } from './context/PatientFilterContext.jsx'
 import useTheme from './context/useTheme.js'
 import Login from './pages/Login.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -44,7 +45,7 @@ function App() {
           <Route path="/register" element={<Register />} />
         </Route>
         <Route element={<ProtectedRoute role="patient" />}>
-          <Route element={<AppLayout />}>
+          <Route element={<PatientFilterProvider><AppLayout /></PatientFilterProvider>}>
             {AUTHENTICATED_ROUTES.filter(({ key }) => key !== 'profile').map(({ path, key }) => (
               <Route
                 key={key}
@@ -59,7 +60,7 @@ function App() {
           </Route>
         </Route>
         <Route element={<ProtectedRoute role="patient" skipProfileCompletion />}>
-          <Route element={<AppLayout />}>
+          <Route element={<PatientFilterProvider><AppLayout /></PatientFilterProvider>}>
             <Route
               path={APP_PATHS.profile}
               element={(
