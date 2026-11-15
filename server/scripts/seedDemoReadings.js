@@ -1,4 +1,5 @@
 const path = require('path');
+const bcrypt = require('bcrypt');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -13,6 +14,11 @@ const TIME_SLOTS = [
 ];
 const BASE_VALUES = [95, 128, 122, 112];
 const INSERT_BATCH_SIZE = 50;
+const DEMO_PATIENT_NAME = 'Demo Patient';
+const DEMO_PATIENT_FULL_NAME = 'Demo Patient';
+const DEMO_PATIENT_AGE = 35;
+const DEMO_PATIENT_GENDER = 'female';
+const DEMO_PATIENT_PHONE = '+919876543210';
 
 function formatLocalDate(date) {
   const year = date.getFullYear();
@@ -89,7 +95,67 @@ function buildInsertQuery(rows, userId) {
   };
 }
 
-async function seedDemoReadings({ databasePool = pool, email, now = new Date() }) {
+async function createDemoPatientUser({ client, email, password }) {
+  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!normalizedEmail) {
+    const error = new Error(
+      'A valid SEED_USER_EMAIL is required to create the demo patient account.',
+    );
+    error.code = 'SEED_USER_EMAIL_REQUIRED';
+    throw error;
+  }
+
+  const normalizedPassword = typeof password === 'string' ? password : '';
+  if (!normalizedPassword || normalizedPassword.length < 8) {
+    const error = new Error(
+      'SEED_USER_PASSWORD must be at least 8 characters when creating the demo patient account.',
+    );
+    error.code = 'SEED_USER_PASSWORD_REQUIRED';
+    throw error;
+  }
+
+  const passwordHash = await bcrypt.hash(normalizedPassword, 12);
+  const userResult = await client.query(
+    `INSERT INTO users (name, email, password, role)
+     VALUES ($1, $2, $3, 'patient')
+     ON CONFLICT (email) DO NOTHING
+     RETURNING id, name, email, role`,
+    [DEMO_PATIENT_NAME, normalizedEmail, passwordHash],
+  );
+
+  let user = userResult.rows[0];
+  if (!user) {
+    const existingResult = await client.query(
+      'SELECT id, role FROM users WHERE email = $1 FOR UPDATE',
+      [normalizedEmail],
+    );
+    user = existingResult.rows[0];
+    if (!user || user.role !== 'patient') {
+      const error = new Error(
+        'The demo patient email is already assigned to a non-patient account; no seed changes were committed.',
+      );
+      error.code = 'SEED_USER_ROLE_CONFLICT';
+      throw error;
+    }
+  }
+
+  await client.query(
+    `INSERT INTO patient_profiles (
+       user_id, full_name, age, gender, phone
+     )
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id) DO UPDATE
+     SET full_name = EXCLUDED.full_name,
+         age = EXCLUDED.age,
+         gender = EXCLUDED.gender,
+         phone = EXCLUDED.phone`,
+    [user.id, DEMO_PATIENT_FULL_NAME, DEMO_PATIENT_AGE, DEMO_PATIENT_GENDER, DEMO_PATIENT_PHONE],
+  );
+
+  return user;
+}
+
+async function seedDemoReadings({ databasePool = pool, email, now = new Date(), createDemoUser = false, demoUserPassword }) {
   const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
   if (!normalizedEmail) {
     const error = new Error(
@@ -112,13 +178,22 @@ async function seedDemoReadings({ databasePool = pool, email, now = new Date() }
       'SELECT id FROM users WHERE email = $1 LIMIT 1',
       [normalizedEmail],
     );
-    const user = userResult.rows[0];
+    let user = userResult.rows[0];
+
     if (!user) {
-      const error = new Error(
-        'No existing user matches SEED_USER_EMAIL. Check that it matches your account; no readings were inserted.',
-      );
-      error.code = 'SEED_USER_NOT_FOUND';
-      throw error;
+      if (!createDemoUser) {
+        const error = new Error(
+          'No existing user matches SEED_USER_EMAIL. Set CREATE_DEMO_USER=true and SEED_USER_PASSWORD to create the demo patient account automatically.',
+        );
+        error.code = 'SEED_USER_NOT_FOUND';
+        throw error;
+      }
+
+      user = await createDemoPatientUser({
+        client,
+        email: normalizedEmail,
+        password: demoUserPassword,
+      });
     }
 
     let inserted = 0;
@@ -136,6 +211,8 @@ async function seedDemoReadings({ databasePool = pool, email, now = new Date() }
       attempted: readings.length,
       inserted,
       skipped: readings.length - inserted,
+      createdUser: !!user && user.id !== undefined && user.id !== null,
+      createdDemoUser: createDemoUser && !userResult.rows[0],
     };
   } catch (error) {
     if (client && transactionStarted) {
@@ -155,6 +232,9 @@ async function seedDemoReadings({ databasePool = pool, email, now = new Date() }
 
 async function main() {
   const email = process.env.SEED_USER_EMAIL;
+  const createDemoUser = process.env.CREATE_DEMO_USER === 'true';
+  const demoUserPassword = process.env.SEED_USER_PASSWORD;
+
   if (!email || !email.trim()) {
     console.error(
       'SEED_USER_EMAIL is required. Set it to the email address of your existing Sweety account.',
@@ -162,12 +242,20 @@ async function main() {
     process.exitCode = 1;
   } else {
     try {
-      const result = await seedDemoReadings({ email });
-      console.log(
-        `Demo seed complete: ${result.inserted} readings inserted; ${result.skipped} existing duplicates skipped.`,
-      );
+      const result = await seedDemoReadings({
+        email,
+        createDemoUser,
+        demoUserPassword,
+      });
+      const summary = result.createdDemoUser
+        ? `Demo seed complete: ${result.inserted} readings inserted for a newly created demo patient account.`
+        : `Demo seed complete: ${result.inserted} readings inserted; ${result.skipped} existing duplicates skipped.`;
+      console.log(summary);
     } catch (error) {
-      if (error.code === 'SEED_USER_NOT_FOUND' || error.code === 'SEED_USER_EMAIL_REQUIRED') {
+      if (
+        ['SEED_USER_NOT_FOUND', 'SEED_USER_EMAIL_REQUIRED', 'SEED_USER_PASSWORD_REQUIRED', 'SEED_USER_ROLE_CONFLICT']
+          .includes(error.code)
+      ) {
         console.error(error.message);
       } else {
         logDatabaseError(error, 'demo reading seed');

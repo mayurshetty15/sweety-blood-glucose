@@ -187,7 +187,23 @@ Then apply the full schema if needed for local dev setup:
 database/schema.sql
 ```
 
-### 7. Seed demo doctors (optional)
+Place the official Supabase root CA certificate at `server/certs/prod-supabase.cer` before starting the backend. The backend verifies the certificate chain and does not disable TLS validation.
+
+### 7. Seed demo patient data (optional)
+
+If you want to populate a local demo patient account with sample readings, set the environment variables below in `server/.env` and run the seed script:
+
+```powershell
+cd server
+$env:SEED_USER_EMAIL = "demo.patient@example.com"
+$env:SEED_USER_PASSWORD = "replace_with_a_secure_demo_password"
+$env:CREATE_DEMO_USER = "true"
+npm run seed:demo
+```
+
+The script creates a patient account when `CREATE_DEMO_USER=true` and the email is not already present, then inserts a deterministic month of sample glucose readings. Without the opt-in flag, it requires an existing user record and will not create a new one.
+
+### 8. Seed demo doctors (optional)
 
 The fictional doctor seed is intentionally opt-in and requires a local `server/.env` configuration:
 
@@ -200,7 +216,7 @@ npm run seed:doctors
 
 This script creates the five fictional demo doctor accounts documented in the project and refuses to convert a non-doctor account into a doctor.
 
-### 8. Start the backend
+### 9. Start the backend
 
 ```powershell
 cd server
@@ -209,14 +225,14 @@ npm run dev
 
 The backend listens on port 5000 by default and exposes health checks under `/api/health`.
 
-### 9. Start the frontend
+### 10. Start the frontend
 
 ```powershell
 cd ..\client
 npm run dev
 ```
 
-### 10. Open the application
+### 11. Open the application
 
 Open the frontend URL reported by Vite, usually `http://localhost:5173`.
 
@@ -240,6 +256,8 @@ Open the frontend URL reported by Vite, usually `http://localhost:5173`.
 | `JWT_SECRET` | Secret used to sign JWTs | `replace_with_a_secure_random_secret` |
 | `JWT_EXPIRES_IN` | JWT lifetime | `1h` |
 | `SEED_USER_EMAIL` | Email used by the reading seed script | `your-existing-account@example.com` |
+| `SEED_USER_PASSWORD` | Password used when creating an automatic demo patient account | `replace_with_a_secure_demo_password` |
+| `CREATE_DEMO_USER` | Opt-in flag that creates a demo patient account when the target email is missing | `false` |
 | `ENABLE_DEMO_DOCTOR_SEED` | Enables the explicit fictional doctor seed | `false` |
 | `DEMO_DOCTOR_PASSWORD` | Local-only demo doctor password | `replace_with_a_unique_secure_demo_password` |
 
@@ -428,6 +446,18 @@ cd ..\server
 npm test
 ```
 
+Use the following commands for a fresh local verification pass:
+
+```powershell
+cd client
+npm test
+npm run build
+npm run lint
+
+cd ..\server
+npm test
+```
+
 Notable test coverage includes:
 
 - Authentication flow and invalid login behavior
@@ -501,6 +531,13 @@ The following are realistic future enhancements for the application and are clea
 - Readings are validated for the app’s supported range and time-slot model.
 - The project stores filter preferences in the browser for a patient and separates them by patient ID so they do not leak across user accounts.
 - The built-in report features are focused on data review and summarization rather than clinical decision support.
+
+## Notes
+
+- The backend requires a valid Supabase certificate at `server/certs/prod-supabase.cer` before it can open a TLS-secured Postgres connection.
+- `server/.env` and `client/.env` are local-only files and must never be committed.
+- Demo and seed commands are intentionally opt-in and should never be enabled in production without review.
+- The application is a local or evaluation project focused on patient tracking flows, consent checks, and diagnostics; it is not a medical diagnosis system.
 
 ## Author and contact
 

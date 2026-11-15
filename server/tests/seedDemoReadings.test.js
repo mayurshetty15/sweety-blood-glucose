@@ -87,6 +87,59 @@ test('inserts only for the existing email user and counts duplicate conflicts', 
   assert.equal(calls[calls.length - 1].sql, 'RELEASE');
 });
 
+test('creates a demo patient account when explicitly enabled and the email is missing', async () => {
+  const calls = [];
+  const databasePool = {
+    async connect() {
+      return {
+        async query(sql, values) {
+          calls.push({ sql, values });
+          if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+            return { rowCount: 0, rows: [] };
+          }
+          if (/SELECT id FROM users/.test(sql)) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (/INSERT INTO users/.test(sql)) {
+            return {
+              rowCount: 1,
+              rows: [{ id: '99', role: 'patient' }],
+            };
+          }
+          if (/INSERT INTO patient_profiles/.test(sql)) {
+            return { rowCount: 1, rows: [] };
+          }
+          assert.match(sql, /INSERT INTO readings/);
+          const rowCount = calls.filter((call) => /INSERT INTO readings/.test(call.sql)).length <= 2 ? 48 : 36;
+          return {
+            rowCount,
+            rows: Array.from({ length: rowCount }, (_, index) => ({ id: index })),
+          };
+        },
+        release() {
+          calls.push({ sql: 'RELEASE' });
+        },
+      };
+    },
+  };
+
+  const result = await seedDemoReadings({
+    databasePool,
+    email: 'demo.patient@example.com',
+    now: FIXED_NOW,
+    createDemoUser: true,
+    demoUserPassword: 'StrongDemoPassword123',
+  });
+
+  assert.equal(result.inserted, 132);
+  assert.equal(result.createdDemoUser, true);
+  assert.ok(calls.some((call) => /INSERT INTO users/.test(call.sql)));
+  assert.ok(calls.some((call) => /INSERT INTO patient_profiles/.test(call.sql)));
+  assert.equal(calls[0].sql, 'BEGIN');
+  assert.equal(calls[calls.length - 2].sql, 'COMMIT');
+  assert.equal(calls[calls.length - 1].sql, 'RELEASE');
+});
+
 test('requires a configured email before acquiring a database client', async () => {
   let connected = false;
   const databasePool = {

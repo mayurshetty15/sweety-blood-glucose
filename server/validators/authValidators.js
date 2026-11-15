@@ -75,14 +75,15 @@ function validateLogin(body) {
     return emailResult;
   }
 
-  if (Buffer.byteLength(password, 'utf8') > MAX_BCRYPT_PASSWORD_BYTES) {
-    return { error: 'Password must not exceed 72 bytes.' };
+  const passwordResult = validatePassword(password);
+  if (passwordResult.error) {
+    return passwordResult;
   }
 
   return {
     value: {
       email: emailResult.value,
-      password,
+      password: passwordResult.value,
       role,
     },
   };

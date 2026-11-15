@@ -169,6 +169,11 @@ test('validates required registration fields, email, and minimum password length
     email: 'mayur@example.com',
     password: 'short',
   });
+  const shortLoginPassword = await postJson('/api/auth/login', {
+    email: 'mayur@example.com',
+    password: 'short',
+    role: 'patient',
+  });
   const missingLoginRole = await postJson('/api/auth/login', {
     email: 'mayur@example.com',
     password: 'StrongPassword123',
@@ -177,8 +182,10 @@ test('validates required registration fields, email, and minimum password length
   assert.equal(missingFields.status, 400);
   assert.equal(invalidEmail.status, 400);
   assert.equal(shortPassword.status, 400);
+  assert.equal(shortLoginPassword.status, 400);
   assert.equal(missingLoginRole.status, 400);
   assert.match(shortPassword.body.message, /at least 8 characters/);
+  assert.match(shortLoginPassword.body.message, /at least 8 characters/);
 });
 
 test('logs in with a normalized email and selected role and returns a safe user and token', async () => {
